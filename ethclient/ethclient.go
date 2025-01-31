@@ -162,9 +162,13 @@ func (ec *Client) getBlock(ctx context.Context, method string, args ...interface
 	if head.UncleHash != types.EmptyUncleHash && len(body.UncleHashes) == 0 {
 		return nil, errors.New("server returned empty uncle list but block header indicates uncles")
 	}
+
 	if head.TxHash == types.EmptyTxsHash && len(body.Transactions) > 0 {
-		return nil, errors.New("server returned non-empty transaction list but block header indicates no transactions")
+		if !IsSystemTransaction(body) {
+			return nil, errors.New("server returned non-empty transaction list but block header indicates no transactions")
+		}
 	}
+
 	if head.TxHash != types.EmptyTxsHash && len(body.Transactions) == 0 {
 		return nil, errors.New("server returned empty transaction list but block header indicates transactions")
 	}
@@ -211,6 +215,29 @@ func (ec *Client) getBlock(ctx context.Context, method string, args ...interface
 			Transactions: txs,
 			Uncles:       uncles,
 		}), nil
+}
+
+// IsSystemTransaction determines if a block contains a single system transaction.
+// A system transaction is identified when:
+// - The block contains only one transaction.
+// - The "from" and "to" addresses in the transaction are both zero addresses.
+func IsSystemTransaction(block rpcBlock) bool {
+	// Empty condition: Block must contain exactly one transaction to qualify
+	if len(block.Transactions) != 1 {
+		return false
+	}
+
+	transaction := block.Transactions[0]
+	zeroAddress := "0x0000000000000000000000000000000000000000"
+
+	// Check both 'from' and 'to' addresses
+	if transaction.From.String() == zeroAddress {
+		if transaction.tx.To() != nil && transaction.tx.To().String() == zeroAddress {
+			return true
+		}
+	}
+
+	return false
 }
 
 // HeaderByHash returns the block header with the given hash.
